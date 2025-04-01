@@ -1,21 +1,29 @@
-import React, { Suspense } from "react";
-import { ApolloProvider, ApolloClient, InMemoryCache, useQuery, useLazyQuery, useMutation, gql } from "@apollo/client";
+import React, { Suspense, useState, useEffect } from "react";
+import {
+  ApolloProvider,
+  ApolloClient,
+  InMemoryCache,
+  useQuery,
+  useLazyQuery,
+  useMutation,
+  gql,
+} from "@apollo/client";
 
 const Auth = React.lazy(() => import("authMF/Auth"));
 const Community = React.lazy(() => import("communityMF/Community"));
 const AIChat = React.lazy(() => import("aiMF/AIChat"));
 
 // =============================
-// ✅ Auth Mutations
+// ✅ GraphQL Definitions
 // =============================
+
+// Auth
 const SIGNUP = gql`
   mutation Signup($username: String!, $email: String!, $password: String!, $role: String!) {
     signup(username: $username, email: $email, password: $password, role: $role) {
       token
       user {
         id
-        username
-        email
       }
     }
   }
@@ -27,30 +35,25 @@ const LOGIN = gql`
       token
       user {
         id
-        username
-        email
       }
     }
   }
 `;
 
-// =============================
-// ✅ Community Queries
-// =============================
+// Community
 const GET_POSTS = gql`
-  query GetPosts {
-    getPosts {
+  query {
+    getAllPosts {
       id
       title
       content
       category
-      createdAt
     }
   }
 `;
 
 const GET_HELP = gql`
-  query GetHelpRequests {
+  query {
     getHelpRequests {
       id
       description
@@ -60,9 +63,23 @@ const GET_HELP = gql`
   }
 `;
 
-// =============================
-// ✅ AI Queries
-// =============================
+const CREATE_POST = gql`
+  mutation CreatePost($author: ID!, $title: String!, $content: String!, $category: String!) {
+    createPost(author: $author, title: $title, content: $content, category: $category) {
+      id
+    }
+  }
+`;
+
+const CREATE_HELP = gql`
+  mutation CreateHelpRequest($author: ID!, $description: String!, $location: String) {
+    createHelpRequest(author: $author, description: $description, location: $location) {
+      id
+    }
+  }
+`;
+
+// AI
 const COMMUNITY_AI_QUERY = gql`
   query CommunityAI($input: String!) {
     communityAIQuery(input: $input) {
@@ -79,7 +96,7 @@ const COMMUNITY_AI_QUERY = gql`
 `;
 
 const GET_INTERACTIONS = gql`
-  query GetAIInteractions {
+  query {
     getAIInteractions {
       id
       input
@@ -90,48 +107,56 @@ const GET_INTERACTIONS = gql`
 `;
 
 // =============================
-// ✅ Apollo Clients
+// ✅ Apollo Clients per service
 // =============================
-const authClient = new ApolloClient({
-  uri: "http://localhost:4001/graphql",
-  cache: new InMemoryCache(),
-});
-
-const communityClient = new ApolloClient({
-  uri: "http://localhost:4002/graphql",
-  cache: new InMemoryCache(),
-});
-
-const aiClient = new ApolloClient({
-  uri: "http://localhost:4003/graphql",
-  cache: new InMemoryCache(),
-});
+const createClient = (port) =>
+  new ApolloClient({
+    uri: `http://localhost:${port}/graphql`,
+    cache: new InMemoryCache(),
+    headers: {
+      authorization: localStorage.getItem("token") || "",
+    },
+  });
 
 // =============================
 // ✅ Shell App
 // =============================
 function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    if (localStorage.getItem("token")) setIsLoggedIn(true);
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("userId");
+    setIsLoggedIn(false);
+  };
+
   return (
-    <div className="container mt-4">
+    <div>
       <h1>COMP308 Mega Assignment</h1>
-
-      <ApolloProvider client={authClient}>
-        <Suspense fallback={<p>Loading Auth...</p>}>
-          <AuthSection />
-        </Suspense>
-      </ApolloProvider>
-
-      <ApolloProvider client={communityClient}>
-        <Suspense fallback={<p>Loading Community...</p>}>
-          <CommunitySection />
-        </Suspense>
-      </ApolloProvider>
-
-      <ApolloProvider client={aiClient}>
-        <Suspense fallback={<p>Loading AI...</p>}>
-          <AISection />
-        </Suspense>
-      </ApolloProvider>
+      {!isLoggedIn ? (
+        <ApolloProvider client={createClient(4001)}>
+          <Suspense fallback={<p>Loading Auth...</p>}>
+            <AuthSection setIsLoggedIn={setIsLoggedIn} />
+          </Suspense>
+        </ApolloProvider>
+      ) : (
+        <>
+          <ApolloProvider client={createClient(4002)}>
+            <Suspense fallback={<p>Loading Community...</p>}>
+              <CommunitySection onLogout={handleLogout} />
+            </Suspense>
+          </ApolloProvider>
+          <ApolloProvider client={createClient(4003)}>
+            <Suspense fallback={<p>Loading AI...</p>}>
+              <AISection />
+            </Suspense>
+          </ApolloProvider>
+        </>
+      )}
     </div>
   );
 }
@@ -139,18 +164,52 @@ function App() {
 // =============================
 // ✅ Section Components
 // =============================
-function AuthSection() {
+function AuthSection({ setIsLoggedIn }) {
   const [signup] = useMutation(SIGNUP);
   const [login] = useMutation(LOGIN);
 
-  return <Auth onSignup={(data) => signup({ variables: data })} onLogin={(data) => login({ variables: data })} />;
+  const handleSignup = async (data) => {
+    const res = await signup({ variables: data });
+    localStorage.setItem("token", res.data.signup.token);
+    localStorage.setItem("userId", res.data.signup.user.id);
+    setIsLoggedIn(true);
+  };
+
+  const handleLogin = async (data) => {
+    const res = await login({ variables: { email: data.email, password: data.password } });
+    localStorage.setItem("token", res.data.login.token);
+    localStorage.setItem("userId", res.data.login.user.id);
+    setIsLoggedIn(true);
+  };
+
+  return <Auth onSignup={handleSignup} onLogin={handleLogin} />;
 }
 
-function CommunitySection() {
-  const { data: postData } = useQuery(GET_POSTS);
-  const { data: helpData } = useQuery(GET_HELP);
+function CommunitySection({ onLogout }) {
+  const { data: postData, refetch: refetchPosts } = useQuery(GET_POSTS);
+  const { data: helpData, refetch: refetchHelp } = useQuery(GET_HELP);
+  const [createPost] = useMutation(CREATE_POST);
+  const [createHelp] = useMutation(CREATE_HELP);
 
-  return <Community posts={postData?.getPosts || []} helpRequests={helpData?.getHelpRequests || []} />;
+  const handleCreatePost = async (author, title, content) => {
+    await createPost({ variables: { author, title, content, category: "discussion" } });
+    refetchPosts();
+  };
+
+  const handleCreateHelp = async (author, description, location) => {
+    await createHelp({ variables: { author, description, location } });
+    refetchHelp();
+  };
+
+  return (
+    <Community
+      posts={postData?.getAllPosts || []}
+      helpRequests={helpData?.getHelpRequests || []}
+      onCreatePost={handleCreatePost}
+      onCreateHelp={handleCreateHelp}
+      onLogout={onLogout}
+    />
+  );
 }
 
 function AISection() {
