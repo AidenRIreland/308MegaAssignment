@@ -1,12 +1,7 @@
 import React, { useState } from "react";
 
 function Auth({ onSignup, onLogin }) {
-  const [form, setForm] = useState({
-    username: "",
-    email: "",
-    password: "",
-    role: "resident",
-  });
+  const [form, setForm] = useState({ username: "", email: "", password: "", role: "resident" });
   const [isRegistering, setIsRegistering] = useState(false);
 
   const handleSubmit = (e) => {
@@ -20,7 +15,7 @@ function Auth({ onSignup, onLogin }) {
 
   return (
     <div>
-      <h2>Auth Micro Frontend</h2>
+      <h2>{isRegistering ? "Create Account" : "Login"}</h2>
       <form onSubmit={handleSubmit}>
         <input
           type="text"
@@ -46,10 +41,7 @@ function Auth({ onSignup, onLogin }) {
           required
         />
         {isRegistering && (
-          <select
-            value={form.role}
-            onChange={(e) => setForm({ ...form, role: e.target.value })}
-          >
+          <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
             <option value="resident">Resident</option>
             <option value="business_owner">Business Owner</option>
             <option value="community_organizer">Community Organizer</option>
@@ -57,7 +49,6 @@ function Auth({ onSignup, onLogin }) {
         )}
         <button type="submit">{isRegistering ? "Sign Up" : "Login"}</button>
       </form>
-
       <p onClick={() => setIsRegistering(!isRegistering)} style={{ cursor: "pointer" }}>
         {isRegistering ? "Already have an account?" : "Need to create an account?"}
       </p>

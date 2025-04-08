@@ -1,53 +1,50 @@
 import React, { Suspense, useState, useEffect } from "react";
-import {
-  ApolloProvider,
-  ApolloClient,
-  InMemoryCache,
-  useQuery,
-  useLazyQuery,
-  useMutation,
-  gql,
-} from "@apollo/client";
+import { ApolloProvider, ApolloClient, InMemoryCache, useQuery, useLazyQuery, useMutation, gql } from "@apollo/client";
 
 const Auth = React.lazy(() => import("authMF/Auth"));
 const Community = React.lazy(() => import("communityMF/Community"));
 const AIChat = React.lazy(() => import("aiMF/AIChat"));
 
-// =============================
-// ✅ GraphQL Definitions
-// =============================
-
-// Auth
+// Auth Queries
 const SIGNUP = gql`
   mutation Signup($username: String!, $email: String!, $password: String!, $role: String!) {
     signup(username: $username, email: $email, password: $password, role: $role) {
       token
       user {
         id
+        username
+        email
       }
     }
   }
 `;
 
 const LOGIN = gql`
-  mutation Login($email: String!, $password: String!) {
-    login(email: $email, password: $password) {
+  mutation Login($username: String!, $password: String!) {
+    login(username: $username, password: $password) {
       token
       user {
         id
+        username
+        email
       }
     }
   }
 `;
 
+
 // Community
 const GET_POSTS = gql`
   query {
-    getAllPosts {
+    getPosts {
       id
       title
       content
       category
+      createdAt
+      author {
+        username
+      }
     }
   }
 `;
@@ -67,6 +64,9 @@ const CREATE_POST = gql`
   mutation CreatePost($author: ID!, $title: String!, $content: String!, $category: String!) {
     createPost(author: $author, title: $title, content: $content, category: $category) {
       id
+      title
+      content
+      category
     }
   }
 `;
@@ -75,52 +75,52 @@ const CREATE_HELP = gql`
   mutation CreateHelpRequest($author: ID!, $description: String!, $location: String) {
     createHelpRequest(author: $author, description: $description, location: $location) {
       id
+      description
+      location
+      isResolved
     }
   }
 `;
 
 // AI
-const COMMUNITY_AI_QUERY = gql`
-  query CommunityAI($input: String!) {
-    communityAIQuery(input: $input) {
-      text
-      suggestedQuestions
-      retrievedPosts {
+const COMMUNITY_AI_QUERY = gql`query CommunityAI($input: String!) {
+  communityAIQuery(input: $input) {
+    text
+    suggestedQuestions
+    retrievedPosts { id title content author }
+  }
+}`;
+const JOIN_HELP_REQUEST = gql`
+  mutation JoinHelp($helpRequestId: ID!, $userId: ID!) {
+    joinHelpRequest(helpRequestId: $helpRequestId, userId: $userId) {
+      id
+      volunteers {
         id
-        title
-        content
-        author
+        username
       }
     }
   }
 `;
 
-const GET_INTERACTIONS = gql`
-  query {
-    getAIInteractions {
+const MARK_RESOLVED = gql`
+  mutation MarkResolved($helpRequestId: ID!) {
+    markHelpRequestResolved(helpRequestId: $helpRequestId) {
       id
-      input
-      response
-      createdAt
+      isResolved
     }
   }
 `;
+const GET_INTERACTIONS = gql`query { getAIInteractions { id input response createdAt } }`;
 
-// =============================
-// ✅ Apollo Clients per service
-// =============================
+// ApolloClient factory
 const createClient = (port) =>
   new ApolloClient({
     uri: `http://localhost:${port}/graphql`,
     cache: new InMemoryCache(),
-    headers: {
-      authorization: localStorage.getItem("token") || "",
-    },
+    headers: { authorization: localStorage.getItem("token") || "" },
   });
 
-// =============================
-// ✅ Shell App
-// =============================
+// ========================= Shell App =========================
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
@@ -135,8 +135,9 @@ function App() {
   };
 
   return (
-    <div>
+    <div className="container mt-4">
       <h1>COMP308 Mega Assignment</h1>
+
       {!isLoggedIn ? (
         <ApolloProvider client={createClient(4001)}>
           <Suspense fallback={<p>Loading Auth...</p>}>
@@ -150,6 +151,7 @@ function App() {
               <CommunitySection onLogout={handleLogout} />
             </Suspense>
           </ApolloProvider>
+
           <ApolloProvider client={createClient(4003)}>
             <Suspense fallback={<p>Loading AI...</p>}>
               <AISection />
@@ -161,26 +163,26 @@ function App() {
   );
 }
 
-// =============================
-// ✅ Section Components
-// =============================
+// ================ Section Components ================
 function AuthSection({ setIsLoggedIn }) {
   const [signup] = useMutation(SIGNUP);
   const [login] = useMutation(LOGIN);
 
   const handleSignup = async (data) => {
     const res = await signup({ variables: data });
-    localStorage.setItem("token", res.data.signup.token);
+    const token = res.data.signup.token;
+    localStorage.setItem("token", token);
     localStorage.setItem("userId", res.data.signup.user.id);
     setIsLoggedIn(true);
   };
 
   const handleLogin = async (data) => {
-    const res = await login({ variables: { email: data.email, password: data.password } });
-    localStorage.setItem("token", res.data.login.token);
+    const res = await login({ variables: { username: data.username, password: data.password } });
+    const token = res.data.login.token;
+    localStorage.setItem("token", token);
     localStorage.setItem("userId", res.data.login.user.id);
     setIsLoggedIn(true);
-  };
+  };  
 
   return <Auth onSignup={handleSignup} onLogin={handleLogin} />;
 }
@@ -191,26 +193,51 @@ function CommunitySection({ onLogout }) {
   const [createPost] = useMutation(CREATE_POST);
   const [createHelp] = useMutation(CREATE_HELP);
 
-  const handleCreatePost = async (author, title, content) => {
-    await createPost({ variables: { author, title, content, category: "discussion" } });
-    refetchPosts();
+  const posts = postData?.getPosts || [];
+  const helpRequests = helpData?.getHelpRequests || [];
+
+  const onCreatePost = async (userId, title, content, category) => {
+    try {
+      await createPost({
+        variables: {
+          author: userId,
+          title,
+          content,
+          category, //use what's passed from Community.jsx
+        },
+      });
+      refetchPosts();
+    } catch (err) {
+      console.error("Error creating post:", err.message);
+    }
   };
 
-  const handleCreateHelp = async (author, description, location) => {
-    await createHelp({ variables: { author, description, location } });
-    refetchHelp();
+  const onCreateHelp = async (userId, description, location) => {
+    try {
+      await createHelp({
+        variables: {
+          author: userId,
+          description,
+          location,
+        },
+      });
+      refetchHelp();
+    } catch (err) {
+      console.error("Error creating help request:", err.message);
+    }
   };
 
   return (
     <Community
-      posts={postData?.getAllPosts || []}
-      helpRequests={helpData?.getHelpRequests || []}
-      onCreatePost={handleCreatePost}
-      onCreateHelp={handleCreateHelp}
+      posts={posts}
+      helpRequests={helpRequests}
+      onCreatePost={onCreatePost}
+      onCreateHelp={onCreateHelp}
       onLogout={onLogout}
     />
   );
 }
+
 
 function AISection() {
   const [getAIResponse, { data: aiResponse }] = useLazyQuery(COMMUNITY_AI_QUERY);
