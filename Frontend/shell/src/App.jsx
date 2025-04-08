@@ -56,6 +56,15 @@ const GET_HELP = gql`
       description
       location
       isResolved
+      createdAt
+      author {
+        id
+        username
+      }
+      volunteers {
+        id
+        username
+      }
     }
   }
 `;
@@ -167,6 +176,7 @@ function App() {
 function AuthSection({ setIsLoggedIn }) {
   const [signup] = useMutation(SIGNUP);
   const [login] = useMutation(LOGIN);
+  
 
   const handleSignup = async (data) => {
     const res = await signup({ variables: data });
@@ -192,7 +202,18 @@ function CommunitySection({ onLogout }) {
   const { data: helpData, refetch: refetchHelp } = useQuery(GET_HELP);
   const [createPost] = useMutation(CREATE_POST);
   const [createHelp] = useMutation(CREATE_HELP);
+  const [joinHelp] = useMutation(JOIN_HELP_REQUEST);
+  const [markResolved] = useMutation(MARK_RESOLVED);
 
+  const onJoinHelp = async (id) => {
+    await joinHelp({ variables: { helpRequestId: id, userId: localStorage.getItem("userId") } });
+    refetchHelp();
+  };
+
+  const onMarkResolved = async (id) => {
+    await markResolved({ variables: { helpRequestId: id } });
+    refetchHelp();
+  };
   const posts = postData?.getPosts || [];
   const helpRequests = helpData?.getHelpRequests || [];
 
@@ -233,6 +254,8 @@ function CommunitySection({ onLogout }) {
       helpRequests={helpRequests}
       onCreatePost={onCreatePost}
       onCreateHelp={onCreateHelp}
+      onJoinHelp={onJoinHelp}
+      onMarkResolved={onMarkResolved}
       onLogout={onLogout}
     />
   );

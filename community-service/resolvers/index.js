@@ -5,7 +5,11 @@ import User from "../models/User.js"; // already added
 export const resolvers = {
   Query: {
     getPosts: async () => await Post.find().populate("author").sort({ createdAt: -1 }),
-    getHelpRequests: async () => await HelpRequest.find().populate("author"), 
+    getHelpRequests: async () =>
+      await HelpRequest.find()
+        .populate("author")
+        .populate("volunteers")
+        .sort({ createdAt: -1 }),
   },
   Mutation: {
     createPost: async (_, { title, content, category, author }) => {

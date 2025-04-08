@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 
-function Community({ posts, helpRequests, onCreatePost, onCreateHelp, onLogout }) {
+function Community({ posts, helpRequests, onCreatePost, onCreateHelp,onJoinHelp,onMarkResolved, onLogout }) {
   const [createMode, setCreateMode] = useState("post");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
